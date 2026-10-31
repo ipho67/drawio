@@ -42,6 +42,38 @@ window.OneDriveClient = function(editorUi, isExtAuth, inlinePicker, noLogout)
 // Extends DrawioClient
 mxUtils.extend(OneDriveClient, DrawioClient);
 
+// Restrict requests carrying a Graph bearer token to the official Graph API origin.
+OneDriveClient.prototype.isGraphUrl = function(url)
+{
+	try
+	{
+		var parsed = new URL(url, window.location.href);
+		return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'graph.microsoft.com' &&
+			parsed.port === '' && parsed.username === '' && parsed.password === '' &&
+			parsed.pathname.indexOf('/v1.0/') === 0;
+	}
+	catch (e)
+	{
+		return false;
+	}
+};
+
+OneDriveClient.prototype.isMicrosoftFileUrl = function(url)
+{
+	try
+	{
+		var parsed = new URL(url);
+		var host = parsed.hostname.toLowerCase();
+		return parsed.protocol === 'https:' && parsed.port === '' && parsed.username === '' && parsed.password === '' &&
+			(host === 'sharepoint.com' || host.endsWith('.sharepoint.com') || host === '1drv.com' ||
+			 host.endsWith('.1drv.com') || host === '1drv.ms' || host.endsWith('.1drv.ms'));
+	}
+	catch (e)
+	{
+		return false;
+	}
+};
+
 /**
  * Specifies if thumbnails should be enabled. Default is true.
  * LATER: If thumbnails are disabled, make sure to replace the
@@ -130,6 +162,12 @@ OneDriveClient.prototype.isValidFilename = function(filename)
  */
 OneDriveClient.prototype.get = function(url, onload, onerror)
 {
+	if (!this.isGraphUrl(url))
+	{
+		if (onerror != null) onerror({message: 'Blocked request to an untrusted Microsoft Graph URL'});
+		return null;
+	}
+	
 	var req = new mxXmlRequest(url, null, 'GET');
 	
 	req.setRequestHeaders = mxUtils.bind(this, function(request, params)
