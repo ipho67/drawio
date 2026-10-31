@@ -712,13 +712,13 @@ OneDriveClient.prototype.getItemURL = function(id, relative)
 	
 	if (idParts.length > 1)
 	{
-		var driveId = idParts[0];
-		var itemId = idParts[1];
+		var driveId = encodeURIComponent(idParts[0]);
+		var itemId = encodeURIComponent(idParts[1]);
 		return (relative? '' : this.baseUrl) + '/drives/' + driveId + (itemId == 'root' ? '/root' : '/items/' + itemId);
 	}
 	else
 	{
-		return (relative? '' : this.baseUrl) + '/me/drive/items/' + id;
+		return (relative? '' : this.baseUrl) + '/me/drive/items/' + encodeURIComponent(id);
 	}
 };
 
@@ -757,7 +757,7 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 		if (req.getStatus() >= 200 && req.getStatus() <= 299)
 		{
 			var meta = JSON.parse(req.getText());
-			var downloadUrl = meta['@microsoft.graph.downloadUrl'];
+			var downloadUrl = downloadUrl;
 			
 			if (!this.isMicrosoftFileUrl(downloadUrl))
 			{
@@ -772,7 +772,7 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 				/\.pdf$/i.test(meta.name) || (!Editor.useCanvasForExport && binary))
 			{
 				var mimeType = (meta.file != null) ? meta.file.mimeType : null;
-				this.ui.convertFile(meta['@microsoft.graph.downloadUrl'], meta.name, mimeType,
+				this.ui.convertFile(downloadUrl, meta.name, mimeType,
 					this.extension, success, error);
 			}
 			else
@@ -785,7 +785,7 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 					error({code: App.ERROR_TIMEOUT})
 				}), this.ui.timeout);
 				
-				this.ui.editor.loadUrl(meta['@microsoft.graph.downloadUrl'], mxUtils.bind(this, function(data)
+				this.ui.editor.loadUrl(downloadUrl, mxUtils.bind(this, function(data)
 				{
 					try
 					{
@@ -822,7 +822,7 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 								data = (window.atob && !mxClient.IS_SF) ? atob(temp) : Base64.decode(temp);
 							}
 							
-							if (Graph.fileSupport && new XMLHttpRequest().upload && this.ui.isRemoteFileFormat(data, meta['@microsoft.graph.downloadUrl']))
+							if (Graph.fileSupport && new XMLHttpRequest().upload && this.ui.isRemoteFileFormat(data, downloadUrl))
 							{
 								this.ui.parseFileData(data, mxUtils.bind(this, function(xhr)
 								{
