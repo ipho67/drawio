@@ -151,7 +151,15 @@ OneDriveClient.prototype.extension = '.drawio';
  */
 OneDriveClient.prototype.baseUrl = 'https://graph.microsoft.com/v1.0';
 
-OneDriveClient.prototype.authUrl = 'https://login.microsoftonline.com/' + (window.DRAWIO_MSGRAPH_TENANT_ID || 'common');
+var msGraphTenantId = window.DRAWIO_MSGRAPH_TENANT_ID || 'common';
+
+// Keep the tenant value to one path segment; fall back safely if configuration is malformed.
+if (!/^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/.test(msGraphTenantId))
+{
+	msGraphTenantId = 'common';
+}
+
+OneDriveClient.prototype.authUrl = 'https://login.microsoftonline.com/' + msGraphTenantId;
 /**
  * Empty function used when no callback is needed
  */
@@ -303,7 +311,29 @@ OneDriveClient.prototype.authenticate = function(success, error, failOnAuth)
 {
 	if (this.isExtAuth)
 	{
-		var oneDriveAuth = window.oneDriveAuth? window.oneDriveAuth : window.parent.oneDriveAuth;
+		var oneDriveAuth = window.oneDriveAuth;
+		
+		if (oneDriveAuth == null && window.parent != null && window.parent !== window)
+		{
+			try
+			{
+				if (window.parent.location.origin === window.location.origin)
+				{
+					oneDriveAuth = window.parent.oneDriveAuth;
+				}
+			}
+			catch (e)
+			{
+				// Cross-origin parent access is not permitted.
+			}
+		}
+		
+		if (typeof oneDriveAuth !== 'function')
+		{
+			if (error != null) error({message: mxResources.get('authFailed')});
+			return;
+		}
+		
 		oneDriveAuth(mxUtils.bind(this, function(newAuthInfo)
 		{
 			this.updateAuthInfo(newAuthInfo, true, this.endpointHint == null, success, error);
@@ -382,7 +412,17 @@ OneDriveClient.prototype.authenticateStep2 = function(state, success, error, fai
 			var acceptAuthResponse = true;
 			
 			//Retry request with refreshed token
-			var authInfo = JSON.parse(this.getPersistentToken(true));
+			var authInfo = null;
+			
+			try
+			{
+				var storedAuthInfo = this.getPersistentToken(true);
+				authInfo = storedAuthInfo != null ? JSON.parse(storedAuthInfo) : null;
+			}
+			catch (e)
+			{
+				this.clearPersistentToken();
+			}
 			
 			if (authInfo != null)
 			{
@@ -425,7 +465,7 @@ OneDriveClient.prototype.authenticateStep2 = function(state, success, error, fai
 				this.ui.showAuthDialog(this, true, mxUtils.bind(this, function(remember, authSuccess)
 				{
 					var url = this.authUrl + '/oauth2/v2.0/authorize' +
-						'?client_id=' + this.clientId + '&response_type=code' +
+						'?client_id=' + encodeURIComponent(this.clientId) + '&response_type=code' +
 						'&redirect_uri=' + encodeURIComponent(this.redirectUri) +
 						'&scope=' + encodeURIComponent(this.scopes + (remember? ' offline_access' : '')) +
 						'&state=' + encodeURIComponent('cId=' + this.clientId + '&domain=' + window.location.host + '&token=' + state); //To identify which app/domain is used
@@ -458,6 +498,13 @@ OneDriveClient.prototype.authenticateStep2 = function(state, success, error, fai
 								
 								try
 								{
+									if (authWindow !== popup || authWindow == null ||
+										authWindow.location.origin !== window.location.origin)
+									{
+										error({message: mxResources.get('accessDenied'), retry: auth});
+										return;
+									}
+									
 									if (authInfo == null)
 									{
 										error({message: mxResources.get('accessDenied'), retry: auth});
