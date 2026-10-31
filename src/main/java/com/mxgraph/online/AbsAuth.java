@@ -198,6 +198,10 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 
 	protected void doGetAbst(Object request, Object response) throws IOException
 	{
+		// OAuth responses can contain access tokens; prevent intermediary/browser caching.
+		setHeader("Cache-Control", "no-store", response);
+		setHeader("Pragma", "no-cache", response);
+
 		String stateOnly = getParameter("getState", request);
 		
 		if ("1".equals(stateOnly))
