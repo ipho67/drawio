@@ -92,14 +92,46 @@ OneDriveClient.prototype.isMicrosoftFileUrl = function(url)
 {
 	var parsed = this.parseHttpsUrl(url);
 	
-	if (parsed == null)
+	if (parsed == null || parsed.pathname === '/' || parsed.hash !== '')
 	{
 		return false;
 	}
 	
 	var host = parsed.hostname.toLowerCase();
-	return this.isHostOrSubdomain(host, 'sharepoint.com') ||
-		this.isHostOrSubdomain(host, '1drv.com') || this.isHostOrSubdomain(host, '1drv.ms');
+	
+	// Graph downloadUrl and uploadUrl values use service hosts under these
+	// domains. Require a real subdomain (not the registrable domain itself)
+	// and valid DNS labels. Short sharing links (1drv.ms) are not file API
+	// transfer endpoints and must not be accepted here.
+	var trustedDomains = ['sharepoint.com', '1drv.com'];
+	
+	for (var i = 0; i < trustedDomains.length; i++)
+	{
+		var domain = trustedDomains[i];
+		
+		if (host.length > domain.length + 1 && this.isHostOrSubdomain(host, domain))
+		{
+			var subdomain = host.substring(0, host.length - domain.length - 1);
+			var labels = subdomain.split('.');
+			var validLabels = true;
+			
+			for (var j = 0; j < labels.length; j++)
+			{
+				if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(labels[j]))
+				{
+					validLabels = false;
+					break;
+				}
+			}
+			
+			if (validLabels)
+			{
+				return true;
+			}
+		}
+	}
+	
+	return false;
 };
 
 OneDriveClient.prototype.isValidSharePointUrl = function(url)
