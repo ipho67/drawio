@@ -10,7 +10,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URI;
@@ -277,9 +276,12 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 				{
 					if (tokenCache != null)
 					{
-						cookieToken = (String) tokenCache.get(cacheKey);
-						// Delete the cached value after lookup: state is single-use.
-						tokenCache.remove(cacheKey);
+						String cachedState = (String) tokenCache.get(cacheKey);
+						// Only accept the state if this request successfully consumes it.
+						if (cachedState != null && tokenCache.remove(cacheKey))
+						{
+							cookieToken = cachedState;
+						}
 					}
 					deleteCookie(STATE_COOKIE, cookiePath, response);
 				}
