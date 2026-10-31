@@ -762,7 +762,7 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 		if (req.getStatus() >= 200 && req.getStatus() <= 299)
 		{
 			var meta = JSON.parse(req.getText());
-			var downloadUrl = downloadUrl;
+			var downloadUrl = meta['@microsoft.graph.downloadUrl'];
 			
 			if (!this.isMicrosoftFileUrl(downloadUrl))
 			{
