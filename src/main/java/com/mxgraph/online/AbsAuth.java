@@ -15,7 +15,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -117,38 +120,51 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 		return "";
 	}
 	
-	@SuppressWarnings("unchecked")
-	protected static void putCacheValue(String key, String val)
+	protected static boolean putCacheValue(String key, String val)
 	{
-		int trials = 0;
-		boolean done = false;
-		
-		do
+		if (tokenCache == null)
 		{
-			//Exponential? back-off
-			if (trials > 0)
-			{
-				try 
-				{
-					Thread.sleep(200 * trials);
-				}
-				catch (InterruptedException e) { }
-			}
-			
-			trials++;
-			
+			return false;
+		}
+
+		for (int trials = 0; trials < 3; trials++)
+		{
 			try
 			{
 				tokenCache.put(key, val);
-				done = true;
+				return true;
 			}
-			catch(Exception e)
+			catch (Exception e)
 			{
-				//delay in re-trial is above
-				done = false;
+				if (trials < 2)
+				{
+					try
+					{
+						Thread.sleep(200 * (trials + 1));
+					}
+					catch (InterruptedException interrupted)
+					{
+						Thread.currentThread().interrupt();
+						return false;
+					}
+				}
 			}
 		}
-		while(!done && trials < 3);
+
+		return false;
+	}
+
+	private static String createRandomToken()
+	{
+		byte[] bytes = new byte[32];
+		random.nextBytes(bytes);
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+	}
+
+	private static boolean isValidState(String stateToken, String cookieToken)
+	{
+		return stateToken != null && cookieToken != null && MessageDigest.isEqual(
+				stateToken.getBytes(StandardCharsets.UTF_8), cookieToken.getBytes(StandardCharsets.UTF_8));
 	}
 
 	//To support multiple tokens in one cookie
@@ -187,9 +203,18 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 		
 		if ("1".equals(stateOnly))
 		{
-			String state = new BigInteger(256, random).toString(32);
-			String key = new BigInteger(256, random).toString(32);
-			putCacheValue(key, state);
+			String state = createRandomToken();
+			String key = createRandomToken();
+
+			// Do not start OAuth if state cannot be stored for one-time validation.
+			if (!putCacheValue(key, state))
+			{
+				setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE, response);
+				setHeader("Cache-Control", "no-store", response);
+				return;
+			}
+
+			setHeader("Cache-Control", "no-store", response);
 			setStatus(HttpServletResponse.SC_OK, response);
 			//Chrome blocks this cookie when draw.io is running in an iframe. The cookie is added to parent frame. TODO FIXME
 			addCookie(STATE_COOKIE, key, STATE_COOKIE_AGE, cookiePath, response); //10 min to finish auth
@@ -215,8 +240,21 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 					
 					for (String part : parts)
 					{
-						String[] keyVal = part.split("=");
-						stateVars.put(keyVal[0], keyVal[1]);
+						int separator = part.indexOf('=');
+						if (separator <= 0)
+						{
+							stateVars.clear();
+							break;
+						}
+						
+						String key = part.substring(0, separator);
+						if (stateVars.containsKey(key))
+						{
+							stateVars.clear();
+							break;
+						}
+						
+						stateVars.put(key, part.substring(separator + 1));
 					}
 				}
 			
@@ -237,9 +275,12 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 				
 				if (cacheKey != null)
 				{
-					cookieToken = (String) tokenCache.get(cacheKey);
-					//Delete cookie & cache after being used since it is a single use
-					tokenCache.remove(cacheKey);
+					if (tokenCache != null)
+					{
+						cookieToken = (String) tokenCache.get(cacheKey);
+						// Delete the cached value after lookup: state is single-use.
+						tokenCache.remove(cacheKey);
+					}
 					deleteCookie(STATE_COOKIE, cookiePath, response);
 				}
 			}
@@ -283,8 +324,9 @@ abstract public class AbsAuth extends HttpServlet implements AbsComm
 			{
 				setStatus(HttpServletResponse.SC_BAD_REQUEST, response);
 			}
-			//Non GAE runtimes are excluded from state check. TODO Change GAE stub to return null from CacheFactory
-			else if (IS_GAE && (stateToken == null || !stateToken.equals(cookieToken)))
+			// Require a valid, single-use state value on every runtime. If the cache
+			// is unavailable, cookieToken remains null and authentication fails closed.
+			else if (!isValidState(stateToken, cookieToken))
 			{
 				setStatus(HttpServletResponse.SC_UNAUTHORIZED, response);
 			}
