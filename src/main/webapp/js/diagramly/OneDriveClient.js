@@ -393,6 +393,8 @@ OneDriveClient.prototype.updateAuthInfo = function(newAuthInfo, remember, forceU
 	{
 		this.accessToken = null;
 		this.tokenExpiresOn = 0;
+		this.clearPersistentToken();
+		this.setUser(null);
 		if (error != null) error({message: mxResources.get('authFailed')});
 		return;
 	}
@@ -1665,7 +1667,7 @@ OneDriveClient.prototype.pickFolder = function(fn, direct)
 					fn(files);
 					
 					//Update the token in case a login with a different user
-					if (mxClient.IS_IE11)
+					if (mxClient.IS_IE11 && files != null && this.isValidAccessToken(files.accessToken))
 					{
 						this.accessToken = files.accessToken;
 					}
@@ -1747,7 +1749,7 @@ OneDriveClient.prototype.pickFile = function(fn, acceptAllFiles)
 				if (files != null && files.value != null && files.value.length > 0)
 				{
 					//Update the token in case a login with a different user
-					if (mxClient.IS_IE11)
+					if (mxClient.IS_IE11 && this.isValidAccessToken(files.accessToken))
 					{
 						this.accessToken = files.accessToken;
 					}
