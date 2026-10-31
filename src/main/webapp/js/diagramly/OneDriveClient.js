@@ -572,7 +572,7 @@ OneDriveClient.prototype.getAccountTypeAndEndpoint = function(success, error)
 			{
 				var resp = JSON.parse(req.getText());
 				
-				if (resp.webUrl.indexOf('.sharepoint.com') > 0) 
+				if (this.isValidSharePointUrl(resp.webUrl))
 			 	{
 					//TODO Confirm this works with all sharepoint sites
 					this.endpointHint = resp.webUrl.replace('/Documents', '/_layouts/15/onedrive.aspx');
@@ -757,6 +757,14 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 		if (req.getStatus() >= 200 && req.getStatus() <= 299)
 		{
 			var meta = JSON.parse(req.getText());
+			var downloadUrl = meta['@microsoft.graph.downloadUrl'];
+			
+			if (!this.isMicrosoftFileUrl(downloadUrl))
+			{
+				error({message: mxResources.get('errorLoadingFile')});
+				return;
+			}
+			
 			var binary = /\.png$/i.test(meta.name);
 			
 			// Handles .vsdx, Gliffy and PNG+XML files by creating a temporary file
@@ -1149,6 +1157,12 @@ OneDriveClient.prototype.saveFile = function(file, success, error, etag)
 
 OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, etag)
 {
+	if (!this.isGraphUrl(url))
+	{
+		error({message: 'Blocked request to an untrusted Microsoft Graph URL'});
+		return;
+	}
+	
 	try
 	{
 		var chunkSize = 4 * 1024 * 1024; //4MB chunk;
@@ -1269,6 +1283,11 @@ OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, et
 					    	if (req.getStatus() >= 200 && req.getStatus() <= 299)
 							{
 								var resp = JSON.parse(req.getText());
+								if (!this.isMicrosoftFileUrl(resp.uploadUrl))
+								{
+									error({message: 'Rejected an untrusted Microsoft upload URL'});
+									return;
+								}
 					    		uploadPart(resp.uploadUrl, 0, 0);
 							}
 							else if (!failOnAuth && req.getStatus() === 401)
@@ -1330,6 +1349,12 @@ OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, et
  */
 OneDriveClient.prototype.writeFile = function(url, data, method, contentType, success, error, etag)
 {
+	if (!this.isGraphUrl(url))
+	{
+		error({message: 'Blocked request to an untrusted Microsoft Graph URL'});
+		return;
+	}
+	
 	try
 	{
 		if (url != null && data != null)
