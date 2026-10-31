@@ -55,55 +55,60 @@ window.OneDriveClient = function(editorUi, isExtAuth, inlinePicker, noLogout)
 mxUtils.extend(OneDriveClient, DrawioClient);
 
 // Restrict requests carrying a Graph bearer token to the official Graph API origin.
+OneDriveClient.prototype.isHostOrSubdomain = function(host, domain)
+{
+	return host === domain || host.slice(-(domain.length + 1)) === '.' + domain;
+};
+
+OneDriveClient.prototype.parseHttpsUrl = function(url)
+{
+	if (typeof url !== 'string' || url.length === 0)
+	{
+		return null;
+	}
+	
+	var parsed = document.createElement('a');
+	parsed.href = url;
+	
+	if (parsed.protocol.toLowerCase() !== 'https:' || parsed.port !== '' ||
+		/^[a-z]+:\/\/[^/]*@/i.test(parsed.href))
+	{
+		return null;
+	}
+	
+	return parsed;
+};
+
 OneDriveClient.prototype.isGraphUrl = function(url)
 {
-	try
-	{
-		var parsed = new URL(url, window.location.href);
-		return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'graph.microsoft.com' &&
-			parsed.port === '' && parsed.username === '' && parsed.password === '' &&
-			parsed.pathname.indexOf('/v1.0/') === 0;
-	}
-	catch (e)
+	var parsed = this.parseHttpsUrl(url);
+	return parsed != null && parsed.hostname.toLowerCase() === 'graph.microsoft.com' &&
+		parsed.pathname.indexOf('/v1.0/') === 0;
+};
+
+OneDriveClient.prototype.isMicrosoftFileUrl = function(url)
+{
+	var parsed = this.parseHttpsUrl(url);
+	
+	if (parsed == null)
 	{
 		return false;
 	}
+	
+	var host = parsed.hostname.toLowerCase();
+	return this.isHostOrSubdomain(host, 'sharepoint.com') ||
+		this.isHostOrSubdomain(host, '1drv.com') || this.isHostOrSubdomain(host, '1drv.ms');
 };
 
 OneDriveClient.prototype.isValidSharePointUrl = function(url)
 {
-	try
-	{
-		var parsed = new URL(url);
-		var host = parsed.hostname.toLowerCase();
-		return parsed.protocol === 'https:' && parsed.port === '' && parsed.username === '' && parsed.password === '' &&
-			(host === 'sharepoint.com' || host.endsWith('.sharepoint.com'));
-	}
-	catch (e)
-	{
-		return false;
-	}
+	var parsed = this.parseHttpsUrl(url);
+	return parsed != null && this.isHostOrSubdomain(parsed.hostname.toLowerCase(), 'sharepoint.com');
 };
 
 OneDriveClient.prototype.isValidEndpointHint = function(endpointHint)
 {
 	return endpointHint === this.defEndpointHint || this.isValidSharePointUrl(endpointHint);
-};
-
-OneDriveClient.prototype.isMicrosoftFileUrl = function(url)
-{
-	try
-	{
-		var parsed = new URL(url);
-		var host = parsed.hostname.toLowerCase();
-		return parsed.protocol === 'https:' && parsed.port === '' && parsed.username === '' && parsed.password === '' &&
-			(host === 'sharepoint.com' || host.endsWith('.sharepoint.com') || host === '1drv.com' ||
-			 host.endsWith('.1drv.com') || host === '1drv.ms' || host.endsWith('.1drv.ms'));
-	}
-	catch (e)
-	{
-		return false;
-	}
 };
 
 /**
