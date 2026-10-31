@@ -7,8 +7,6 @@
 (function ()
 {
 
-var _token = null;
-
 window.OneDriveClient = function(editorUi, isExtAuth, inlinePicker, noLogout)
 {
 	if (isExtAuth == null && window.urlParams != null && window.urlParams['extAuth'] == '1')
@@ -31,6 +29,8 @@ window.OneDriveClient = function(editorUi, isExtAuth, inlinePicker, noLogout)
 	this.isExtAuth = isExtAuth;
 	this.inlinePicker = inlinePicker;
 	this.noLogout = noLogout;
+	this.accessToken = null;
+	this.tokenExpiresOn = 0;
 	var authInfo = JSON.parse(this.token);
 	
 	if (authInfo != null)
@@ -172,7 +172,7 @@ OneDriveClient.prototype.get = function(url, onload, onerror)
 	
 	req.setRequestHeaders = mxUtils.bind(this, function(request, params)
 	{
-		request.setRequestHeader('Authorization', 'Bearer ' + _token);
+		request.setRequestHeader('Authorization', 'Bearer ' + this.accessToken);
 	});
 	
 	req.send(onload, onerror);
@@ -304,8 +304,8 @@ OneDriveClient.prototype.updateAuthInfo = function(newAuthInfo, remember, forceU
 		this.setUser(null);
 	}
 	
-	_token = newAuthInfo.access_token;
-	delete newAuthInfo.access_token; //Don't store access token
+	this.accessToken = newAuthInfo.accessthis.accessToken;
+	delete newAuthInfo.accessthis.accessToken; //Don't store access token
 	newAuthInfo.expiresOn = Date.now() + newAuthInfo.expires_in * 1000;
 	this.tokenExpiresOn = newAuthInfo.expiresOn;
 
@@ -363,7 +363,7 @@ OneDriveClient.prototype.authenticateStep2 = function(state, success, error, fai
 					{
 						this.clearPersistentToken();
 						this.setUser(null);
-						_token = null;
+						this.accessToken = null;
 
  						// (Unauthorized) [e.g, invalid refresh token] or bad request
 						if ((req.getStatus() == 401 || req.getStatus() == 400) && !failOnAuth)
@@ -568,7 +568,7 @@ OneDriveClient.prototype.executeRequest = function(url, success, error)
 		}));
 	});
 	
-	if (_token == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
+	if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
 	{
 		this.authenticate(function()
 		{
@@ -586,7 +586,7 @@ OneDriveClient.prototype.executeRequest = function(url, success, error)
  */
 OneDriveClient.prototype.checkToken = function(fn, error)
 {
-	if (_token == null || this.tokenRefreshThread == null || this.tokenExpiresOn - Date.now() < 60000)
+	if (this.accessToken == null || this.tokenRefreshThread == null || this.tokenExpiresOn - Date.now() < 60000)
 	{
 		this.authenticate(fn, (error != null) ? error : this.emptyFn);
 	}
@@ -1162,7 +1162,7 @@ OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, et
 					req.setRequestHeaders = mxUtils.bind(this, function(request, params)
 					{
 						request.setRequestHeader('Content-Type', 'application/json');
-						request.setRequestHeader('Authorization', 'Bearer ' + _token);
+						request.setRequestHeader('Authorization', 'Bearer ' + this.accessToken);
 						
 						if (etag != null)
 						{
@@ -1209,7 +1209,7 @@ OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, et
 				}
 			});
 			
-			if (_token == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
+			if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
 			{
 				this.authenticate(function()
 				{
@@ -1274,7 +1274,7 @@ OneDriveClient.prototype.writeFile = function(url, data, method, contentType, su
 						//TODO This header is needed for moving a file between two different drives. 
 						//		Note: the response is empty when this header is used, also the server may take some time to really execute the request (i.e. async) 
 						//request.setRequestHeader('Prefer', 'respond-async');
-						request.setRequestHeader('Authorization', 'Bearer ' + _token);
+						request.setRequestHeader('Authorization', 'Bearer ' + this.accessToken);
 						
 						if (etag != null)
 						{
@@ -1325,7 +1325,7 @@ OneDriveClient.prototype.writeFile = function(url, data, method, contentType, su
 				}
 			});
 			
-			if (_token == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
+			if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
 			{
 				this.authenticate(function()
 				{
@@ -1500,7 +1500,7 @@ OneDriveClient.prototype.pickFolder = function(fn, direct)
 					'endpointHint': mxClient.IS_IE11? null : this.endpointHint, //IE11 doen't work with our modified version, so, setting endpointHint disable using our token BUT will force relogin!
 					'redirectUri': this.pickerRedirectUri,
 					'queryParameters': 'select=id,name,parentReference',
-					'accessToken': _token,
+					'accessToken': this.accessToken,
 					isConsumerAccount: false
 				},
 				success: mxUtils.bind(this, function(files)
@@ -1510,7 +1510,7 @@ OneDriveClient.prototype.pickFolder = function(fn, direct)
 					//Update the token in case a login with a different user
 					if (mxClient.IS_IE11)
 					{
-						_token = files.accessToken;
+						this.accessToken = files.accessToken;
 					}
 				}),
 				cancel: mxUtils.bind(this, function()
@@ -1540,7 +1540,7 @@ OneDriveClient.prototype.pickFolder = function(fn, direct)
 		}
 	});
 	
-	if (_token == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
+	if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
 	{
 		this.authenticate(mxUtils.bind(this, function()
 		{
@@ -1582,7 +1582,7 @@ OneDriveClient.prototype.pickFile = function(fn, acceptAllFiles)
 				'endpointHint': mxClient.IS_IE11? null : this.endpointHint, //IE11 doen't work with our modified version, so, setting endpointHint disable using our token BUT will force relogin!
 				'redirectUri': this.pickerRedirectUri,
 				'queryParameters': 'select=id,name,parentReference,webUrl', //We can also get @microsoft.graph.downloadUrl within this request but it will break the normal process
-				'accessToken': _token,
+				'accessToken': this.accessToken,
 				isConsumerAccount: false
 			},
 			success: mxUtils.bind(this, function(files)
@@ -1592,7 +1592,7 @@ OneDriveClient.prototype.pickFile = function(fn, acceptAllFiles)
 					//Update the token in case a login with a different user
 					if (mxClient.IS_IE11)
 					{
-						_token = files.accessToken;
+						this.accessToken = files.accessToken;
 					}
 					
 					fn(OneDriveFile.prototype.getIdOf(files.value[0]), files);
@@ -1611,7 +1611,7 @@ OneDriveClient.prototype.pickFile = function(fn, acceptAllFiles)
 		}
 	});
 	
-	if (_token == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
+	if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
 	{
 		this.authenticate(mxUtils.bind(this, function()
 		{
@@ -1655,7 +1655,7 @@ OneDriveClient.prototype.logout = function()
 	this.ui.editor.loadUrl(this.redirectUri + '?doLogout=1&state=' + encodeURIComponent('cId=' + this.clientId + '&domain=' + window.location.host));
 	this.clearPersistentToken();
 	this.setUser(null);
-	_token = null;
+	this.accessToken = null;
 };
 
 })();
