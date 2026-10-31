@@ -1670,6 +1670,12 @@ OneDriveClient.prototype.createInlinePicker = function(fn, foldersOnly, acceptAl
  */
 OneDriveClient.prototype.pickFolder = function(fn, direct)
 {
+	if (typeof fn !== 'function')
+	{
+		this.ui.showError(mxResources.get('error'), 'A folder selection callback is required');
+		return;
+	}
+	
 	var errorFn = mxUtils.bind(this, function(e)
 	{
 		this.ui.showError(mxResources.get('error'), e && e.message? e.message : e);
@@ -1688,25 +1694,33 @@ OneDriveClient.prototype.pickFolder = function(fn, direct)
 				openInNewWindow: true,
 				advanced:
 				{
-					'endpointHint': mxClient.IS_IE11? null : this.endpointHint, //IE11 doen't work with our modified version, so, setting endpointHint disable using our token BUT will force relogin!
+					'endpointHint': mxClient.IS_IE11? null : this.endpointHint,
 					'redirectUri': this.pickerRedirectUri,
-					'queryParameters': 'select=id,name,parentReference',
+					'queryParameters': 'select=id,name,parentReference,folder',
 					'accessToken': this.accessToken,
 					isConsumerAccount: false
 				},
 				success: mxUtils.bind(this, function(files)
 				{
-					fn(files);
+					if (files == null || !Array.isArray(files.value) || files.value.length !== 1 ||
+						files.value[0] == null || files.value[0].id == null ||
+						files.value[0].folder == null || typeof files.value[0].folder !== 'object')
+					{
+						errorFn({message: mxResources.get('invalidSel', null, 'Invalid folder selection')});
+						return;
+					}
 					
-					//Update the token in case a login with a different user
-					if (mxClient.IS_IE11 && files != null && this.isValidAccessToken(files.accessToken))
+					// Refresh the in-memory token before invoking callbacks that may issue API requests.
+					if (mxClient.IS_IE11 && this.isValidAccessToken(files.accessToken))
 					{
 						this.accessToken = files.accessToken;
 					}
+					
+					fn(files);
 				}),
 				cancel: mxUtils.bind(this, function()
 				{
-					// do nothing
+					// User cancelled the picker.
 				}),
 				error: errorFn
 			});
@@ -1731,11 +1745,11 @@ OneDriveClient.prototype.pickFolder = function(fn, direct)
 		}
 	});
 	
-	if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000) //60 sec tolerance window
+	if (this.accessToken == null || this.tokenExpiresOn - Date.now() < 60000)
 	{
 		this.authenticate(mxUtils.bind(this, function()
 		{
-			// Direct only possible within user event
+			// Keep the direct flag only for the inline picker, which does not need a popup window.
 			odSaveDlg(this.inlinePicker && direct);
 		}), errorFn);
 	}
