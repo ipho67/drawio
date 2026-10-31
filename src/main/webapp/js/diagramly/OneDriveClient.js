@@ -31,11 +31,23 @@ window.OneDriveClient = function(editorUi, isExtAuth, inlinePicker, noLogout)
 	this.noLogout = noLogout;
 	this.accessToken = null;
 	this.tokenExpiresOn = 0;
-	var authInfo = JSON.parse(this.token);
+	var authInfo = null;
 	
-	if (authInfo != null)
+	try
 	{
-		this.endpointHint = authInfo.endpointHint != null ? authInfo.endpointHint.replace('/Documents', '/_layouts/15/onedrive.aspx') : authInfo.endpointHint;
+		authInfo = this.token != null ? JSON.parse(this.token) : null;
+	}
+	catch (e)
+	{
+		// Invalid persisted authentication data must not prevent the editor from loading.
+		this.clearPersistentToken();
+	}
+	
+	if (authInfo != null && authInfo.endpointHint != null)
+	{
+		this.endpointHint = this.isValidEndpointHint(authInfo.endpointHint) ?
+			(authInfo.endpointHint == this.defEndpointHint ? this.defEndpointHint :
+				 authInfo.endpointHint.replace('/Documents', '/_layouts/15/onedrive.aspx')) : this.defEndpointHint;
 	}
 };
 
@@ -56,6 +68,26 @@ OneDriveClient.prototype.isGraphUrl = function(url)
 	{
 		return false;
 	}
+};
+
+OneDriveClient.prototype.isValidSharePointUrl = function(url)
+{
+	try
+	{
+		var parsed = new URL(url);
+		var host = parsed.hostname.toLowerCase();
+		return parsed.protocol === 'https:' && parsed.port === '' && parsed.username === '' && parsed.password === '' &&
+			(host === 'sharepoint.com' || host.endsWith('.sharepoint.com'));
+	}
+	catch (e)
+	{
+		return false;
+	}
+};
+
+OneDriveClient.prototype.isValidEndpointHint = function(endpointHint)
+{
+	return endpointHint === this.defEndpointHint || this.isValidSharePointUrl(endpointHint);
 };
 
 OneDriveClient.prototype.isMicrosoftFileUrl = function(url)
@@ -304,12 +336,23 @@ OneDriveClient.prototype.updateAuthInfo = function(newAuthInfo, remember, forceU
 		this.setUser(null);
 	}
 	
-	this.accessToken = newAuthInfo.accessthis.accessToken;
-	delete newAuthInfo.accessthis.accessToken; //Don't store access token
+	if (newAuthInfo == null || typeof newAuthInfo !== 'object' ||
+		typeof newAuthInfo.access_token !== 'string' || newAuthInfo.access_token.length === 0 ||
+		newAuthInfo.access_token.length > 16384 || typeof newAuthInfo.expires_in !== 'number' ||
+		!isFinite(newAuthInfo.expires_in) || newAuthInfo.expires_in <= 0 || newAuthInfo.expires_in > 31536000)
+	{
+		this.accessToken = null;
+		this.tokenExpiresOn = 0;
+		if (error != null) error({message: mxResources.get('authFailed')});
+		return;
+	}
+	
+	this.accessToken = newAuthInfo.access_token;
+	delete newAuthInfo.access_token; // Never persist the access token.
 	newAuthInfo.expiresOn = Date.now() + newAuthInfo.expires_in * 1000;
 	this.tokenExpiresOn = newAuthInfo.expiresOn;
 
-	newAuthInfo.remember = remember;
+	newAuthInfo.remember = remember === true;
 	this.setPersistentToken(JSON.stringify(newAuthInfo), !remember);
 	this.resetTokenRefresh(newAuthInfo.expires_in);
 
