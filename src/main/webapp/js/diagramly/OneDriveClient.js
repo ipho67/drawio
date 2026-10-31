@@ -62,7 +62,7 @@ OneDriveClient.prototype.isHostOrSubdomain = function(host, domain)
 
 OneDriveClient.prototype.parseHttpsUrl = function(url)
 {
-	if (typeof url !== 'string' || url.length === 0)
+	if (typeof url !== 'string' || url.length === 0 || url.length > 8192 || url !== url.replace(/^\s+|\s+$/g, ''))
 	{
 		return null;
 	}
@@ -71,7 +71,9 @@ OneDriveClient.prototype.parseHttpsUrl = function(url)
 	parsed.href = url;
 	
 	if (parsed.protocol.toLowerCase() !== 'https:' || parsed.port !== '' ||
-		/^[a-z]+:\/\/[^/]*@/i.test(parsed.href))
+		(parsed.username != null && parsed.username !== '') ||
+		(parsed.password != null && parsed.password !== '') ||
+		/^https:\/\/[^/]*@/i.test(url))
 	{
 		return null;
 	}
@@ -109,6 +111,14 @@ OneDriveClient.prototype.isValidSharePointUrl = function(url)
 OneDriveClient.prototype.isValidEndpointHint = function(endpointHint)
 {
 	return endpointHint === this.defEndpointHint || this.isValidSharePointUrl(endpointHint);
+};
+
+// OAuth bearer tokens must be non-empty RFC 6749 token characters.
+// Reject whitespace and control characters before a token reaches an HTTP header.
+OneDriveClient.prototype.isValidAccessToken = function(token)
+{
+	return typeof token === 'string' && token.length > 0 && token.length <= 16384 &&
+		/^[A-Za-z0-9\-._~+/]+=*$/.test(token);
 };
 
 /**
@@ -210,6 +220,12 @@ OneDriveClient.prototype.get = function(url, onload, onerror)
 	if (!this.isGraphUrl(url))
 	{
 		if (onerror != null) onerror({message: 'Blocked request to an untrusted Microsoft Graph URL'});
+		return null;
+	}
+	
+	if (!this.isValidAccessToken(this.accessToken))
+	{
+		if (onerror != null) onerror({message: mxResources.get('authFailed')});
 		return null;
 	}
 	
@@ -372,8 +388,7 @@ OneDriveClient.prototype.updateAuthInfo = function(newAuthInfo, remember, forceU
 	}
 	
 	if (newAuthInfo == null || typeof newAuthInfo !== 'object' ||
-		typeof newAuthInfo.access_token !== 'string' || newAuthInfo.access_token.length === 0 ||
-		newAuthInfo.access_token.length > 16384 || typeof newAuthInfo.expires_in !== 'number' ||
+		!this.isValidAccessToken(newAuthInfo.access_token) || typeof newAuthInfo.expires_in !== 'number' ||
 		!isFinite(newAuthInfo.expires_in) || newAuthInfo.expires_in <= 0 || newAuthInfo.expires_in > 31536000)
 	{
 		this.accessToken = null;
@@ -713,7 +728,17 @@ OneDriveClient.prototype.getItemRef = function(id)
  */
 OneDriveClient.prototype.getItemURL = function(id, relative)
 {
+	if (typeof id !== 'string' || id.length === 0 || id.length > 2048)
+	{
+		return null;
+	}
+	
 	var idParts = id.split('/');
+	
+	if (idParts.length > 2 || (idParts.length > 1 && (idParts[0].length === 0 || idParts[1].length === 0)))
+	{
+		return null;
+	}
 	
 	if (idParts.length > 1)
 	{
@@ -762,7 +787,7 @@ OneDriveClient.prototype.getFile = function(id, success, error, denyConvert, asL
 		if (req.getStatus() >= 200 && req.getStatus() <= 299)
 		{
 			var meta = JSON.parse(req.getText());
-			var downloadUrl = meta['@microsoft.graph.downloadUrl'];
+			var downloadUrl = meta != null ? meta['@microsoft.graph.downloadUrl'] : null;
 			
 			if (!this.isMicrosoftFileUrl(downloadUrl))
 			{
@@ -1168,6 +1193,12 @@ OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, et
 		return;
 	}
 	
+	if (!this.isValidAccessToken(this.accessToken))
+	{
+		error({message: mxResources.get('authFailed')});
+		return;
+	}
+	
 	try
 	{
 		var chunkSize = 4 * 1024 * 1024; //4MB chunk;
@@ -1288,7 +1319,7 @@ OneDriveClient.prototype.writeLargeFile = function(url, data, success, error, et
 					    	if (req.getStatus() >= 200 && req.getStatus() <= 299)
 							{
 								var resp = JSON.parse(req.getText());
-								if (!this.isMicrosoftFileUrl(resp.uploadUrl))
+								if (resp == null || !this.isMicrosoftFileUrl(resp.uploadUrl))
 								{
 									error({message: 'Rejected an untrusted Microsoft upload URL'});
 									return;
@@ -1357,6 +1388,12 @@ OneDriveClient.prototype.writeFile = function(url, data, method, contentType, su
 	if (!this.isGraphUrl(url))
 	{
 		error({message: 'Blocked request to an untrusted Microsoft Graph URL'});
+		return;
+	}
+	
+	if (!this.isValidAccessToken(this.accessToken))
+	{
+		error({message: mxResources.get('authFailed')});
 		return;
 	}
 	
