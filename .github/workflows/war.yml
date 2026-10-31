@@ -10,11 +10,16 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
+    # The release action needs write access to publish the GitHub release.
+    # Keep all other token permissions disabled.
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v3
+      with:
+        persist-credentials: false
     - name: Set up JDK 1.8
       uses: actions/setup-java@v3
       with:
